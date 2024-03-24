@@ -21,29 +21,35 @@ void inicializar_cola(Cola *cola, int tam_cola)
     }
 
     // A RELLENAR el resto de la inicialización de la cola
-    cola->head = 0;
-    cola->tail = 0;
-    cola->tam_cola = tam_cola;
-
-    cola->datos = (dato_cola **)malloc(tam_cola * sizeof(dato_cola *));
-
-    if(cola->datos == NULL){
-        perror("Error: No se pudo asignar memoria para la cola");
-        exit(3);
+    cola -> datos = (dato_cola **) malloc(tam_cola * sizeof(dato_cola *));
+    if (cola -> datos == NULL) {
+        perror("malloc cola->datos");
+        exit(EXIT_FAILURE);
     }
 
-    for(i = 0; i < tam_cola; ++i){
-        cola->datos[i] = (dato_cola *)malloc(sizeof(dato_cola));
-        if(cola->datos[i] == NULL){
-            perror("Error: No se pudo asignar memoria para el elemento de la cola");
-            exit(4);
-        }
+    cola -> head = 0;
+    cola -> tail = 0;
+    cola -> tam_cola = tam_cola;
+
+    if (pthread_mutex_init(&(cola -> mutex_head), NULL) != 0) {
+        perror("Pthread init mutex_head");
+        exit(EXIT_FAILURE);
     }
 
-    pthread_mutex_init(&cola->mutex_head, NULL);
-    pthread_mutex_init(&cola->mutex_tail, NULL);
-    sem_init(&cola->num_huecos, 0, tam_cola);
-    sem_init(&cola->num_ocupados, 0, 0);
+    if (pthread_mutex_init(&(cola -> mutex_tail), NULL) != 0) {
+        perror("Pthread init mutex_tail");
+        exit(EXIT_FAILURE);
+    }
+
+    if (sem_init(&(cola -> num_huecos), 0, tam_cola) != 0) {
+        perror("Semaphore init num_huecos");
+        exit(EXIT_FAILURE);
+    }
+
+    if (sem_init(&(cola -> num_ocupados), 0, 0) != 0) {
+        perror("Semaphore init num_ocupados");
+        exit(EXIT_FAILURE);
+    }
 }
 
 void destruir_cola(Cola *cola)
@@ -53,43 +59,64 @@ void destruir_cola(Cola *cola)
     // destruir los semáforos y mutexes
     
     // A RELLENAR
-    for (int i = 0; i < cola->tam_cola; ++i)
-    {
-        free(cola->datos[i]);
+    free(cola -> datos);
+    if (pthread_mutex_destroy(&(cola -> mutex_head)) != 0) {
+        perror("Pthread destroy mutex_head");
+        exit(EXIT_FAILURE);
     }
 
-    free(cola->datos);
+    if (pthread_mutex_destroy(&(cola -> mutex_tail)) != 0) {
+        perror("Pthread destroy mutex_tail");
+        exit(EXIT_FAILURE);
+    }
 
+    if (sem_destroy(&(cola -> num_huecos)) != 0) {
+        perror("Semaphore destroy num_huecos");
+        exit(EXIT_FAILURE);
+    }
 
-    pthread_mutex_destroy(&cola->mutex_head);
-    pthread_mutex_destroy(&cola->mutex_tail);
-    sem_destroy(&cola->num_huecos);
-    sem_destroy(&cola->num_ocupados);
+    if (sem_destroy(&(cola -> num_ocupados)) != 0) {
+        perror("Semaphore destroy num_ocupados");
+        exit(EXIT_FAILURE);
+    }
 
 }
 
 void insertar_dato_cola(Cola *cola, dato_cola *dato)
 {
     // A RELLENAR
-    if (cola == NULL || dato == NULL)
-    {
-        perror("Error: El puntero a la cola o al dato es NULL en insertar_dato_cola");
-        exit(1);
+    if (cola == NULL) {
+        fprintf(stderr, "cola == NULL\n");
+        exit(EXIT_FAILURE);
     }
 
-    sem_wait(&cola->num_huecos); // Esperar hasta que haya espacio disponible en la cola
-    pthread_mutex_lock(&cola->mutex_tail); // Bloquear el acceso al tail de la cola
+    if (cola -> datos == NULL) {
+        fprintf(stderr, "cola->datos == NULL\n");
+        exit(EXIT_FAILURE);
+    }
 
-    // Insertar el dato en la posición tail
-    cola->datos[cola->tail]->s = dato->s;
-    strcpy(cola->datos[cola->tail]->msg, dato->msg);
-    memcpy(&cola->datos[cola->tail]->d_cliente, &dato->d_cliente, sizeof(struct sockaddr_in));
+    if (sem_wait(&(cola -> num_huecos)) != 0) {
+        perror("sem_wait num_huecos");
+        exit(EXIT_FAILURE);
+    }
 
-    // Mover el tail al siguiente elemento circularmente
-    cola->tail = (cola->tail + 1) % cola->tam_cola;
+    if (pthread_mutex_lock(&(cola -> mutex_head)) != 0) {
+        perror("pthread_mutex_lock mutex_head");
+        exit(EXIT_FAILURE);
+    }
 
-    pthread_mutex_unlock(&cola->mutex_tail); // Desbloquear el acceso al tail de la cola
-    sem_post(&cola->num_ocupados); // Incrementar el contador de elementos ocupados en
+    cola -> datos[cola -> head] = dato;
+    cola -> head = (cola -> head + 1) % cola -> tam_cola;
+
+    if (pthread_mutex_unlock(&(cola -> mutex_head)) != 0) {
+        perror("pthread_mutex_unlock mutex_head");
+        exit(EXIT_FAILURE);
+    }
+
+    if (sem_post(&(cola -> num_ocupados)) != 0) {
+        perror("sem_post num_ocupados");
+        exit(EXIT_FAILURE);
+    }
 
 }
 
@@ -98,23 +125,47 @@ dato_cola *obtener_dato_cola(Cola *cola)
     dato_cola *p;
 
     // A RELLENAR
-    if (cola == NULL)
-    {
-        perror("Error: El puntero a la cola es NULL en obtener_dato_cola");
-        exit(1);
+    if (cola == NULL) {
+        fprintf(stderr, "cola == NULL\n");
+        exit(EXIT_FAILURE);
     }
 
-    sem_wait(&cola->num_ocupados); // Esperar hasta que haya datos disponibles en la cola
-    pthread_mutex_lock(&cola->mutex_head); // Bloquear el acceso al head de la cola
+    if (cola -> datos == NULL) {
+        fprintf(stderr, "cola->datos == NULL\n");
+        exit(EXIT_FAILURE);
+    }
 
-    // Obtener el dato en la posición head
-    p = cola->datos[cola->head];
+    if (sem_wait(&(cola -> num_ocupados)) != 0) {
+        perror("sem_wait num_ocupados");
+        exit(EXIT_FAILURE);
+    }
 
-    // Mover el head al siguiente elemento circularmente
-    cola->head = (cola->head + 1) % cola->tam_cola;
+    if (pthread_mutex_lock(&(cola -> mutex_tail)) != 0) {
+        perror("pthread_mutex_lock mutex_tail");
+        exit(EXIT_FAILURE);
+    }
 
-    pthread_mutex_unlock(&cola->mutex_head); // Desbloquear el acceso al head de la cola
-    sem_post(&cola->num_huecos); // Incrementar el contador de huecos disponibles en la cola
+    p = cola -> datos[cola -> tail];
+    cola -> tail = (cola -> tail + 1) % cola -> tam_cola;
+
+    if (pthread_mutex_unlock(&(cola -> mutex_tail)) != 0) {
+        perror("pthread_mutex_unlock mutex_tail");
+        exit(EXIT_FAILURE);
+    }
+
+    if (sem_post(&(cola -> num_huecos)) != 0) {
+        perror("sem_post num_huecos");
+        exit(EXIT_FAILURE);
+    }
 
     return p;
+}
+
+
+void imprimir_dato_cola(dato_cola *dato) {
+    printf("Contenido de dato_cola:\n");
+    printf(" - Mensaje: %s", dato->msg);
+    printf(" - Socket: %d\n", dato->s);
+    printf(" - Dirección IP del cliente: %s\n", inet_ntoa(dato->d_cliente.sin_addr));
+    printf(" - Puerto del cliente: %d\n", ntohs(dato->d_cliente.sin_port));
 }

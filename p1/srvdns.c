@@ -108,77 +108,67 @@ void procesa_argumentos(int argc, char *argv[])
     // Puedes usar las funciones en util.h
 
     // A RELLENAR
-    
-    nomfrecords = argv[3];
-    
-    
-    if ((argv[1][0] == 'T' || argv[1][0] == 't')) {
-        es_stream = CIERTO; // TCP
-    } else if ((argv[1][0] == 'U' || argv[1][0] == 'u')) {
-        es_stream = FALSO; // UDP
-    } else {
-        fprintf(stderr, "Argumento inválido: debe ser 'T' o 'U'\n");
-        exit(1);
+    if(strcmp(argv[1], "t") == 0)
+    {
+        es_stream = CIERTO;
     }
-
-    if(!valida_numero(argv[2])){
-        fprintf(stderr, "El puerto introducido NO es un número");
-        exit(1);
+    else if(strcmp(argv[1], "u") == 0)
+    {
+        es_stream = FALSO;
     }
-
-    else{
-        puerto = atoi(argv[2]);
-    }
-
-    if(puerto < 1023 || puerto > 65535){
-        fprintf(stderr, "El puerto utilizado NO está en un rango válido");
+    else
+    {
+        fprintf(stderr, "El segundo argumento debe ser 't' o 'u'\n");
         exit(2);
     }
 
-    if(fopen(nomfrecords, "r") == NULL){
-        fprintf(stderr, "El fichero de registros dns NO existe");
+    puerto = atoi(argv[2]);
+
+    if(puerto < 1024 || puerto > 65535)
+    {
+        fprintf(stderr, "El puerto debe estar entre 1024 y 65535\n");
         exit(3);
     }
 
-    if(!valida_numero(argv[4])){
-        fprintf(stderr, "El tamanio de cola introducido NO es un número");
+    nomfrecords = argv[3];
+
+    if(fopen(nomfrecords, "r") == NULL)
+    {
+        fprintf(stderr, "El fichero de registros no existe\n");
         exit(4);
     }
 
-    else{
-        tam_cola = atoi(argv[4]);
+    tam_cola = atoi(argv[4]);
+
+    if(tam_cola < 1)
+    {
+        fprintf(stderr, "El tamaño de la cola debe ser mayor que 0\n");
+        exit(5);
     }
 
-    if(!valida_numero(argv[5])){
-        fprintf(stderr, "El nº de hilos de atención NO es un numero");
+    num_hilos_aten = atoi(argv[5]);
+
+    if(num_hilos_aten < 1)
+    {
+        fprintf(stderr, "El número de hilos de atención debe ser mayor que 0\n");
         exit(6);
     }
 
-    else{
-        num_hilos_aten = atoi(argv[5]);
-    }
+    num_hilos_work = atoi(argv[6]);
 
-    if(num_hilos_aten < 1){
-        fprintf(stderr, "El nº de hilos de atención debe ser mayor que cero");
+    if(num_hilos_work < 1 || num_hilos_work > MAX_HILOS_WORK)
+    {
+        fprintf(stderr, "El número de hilos trabajadores debe estar entre 1 y %d\n", MAX_HILOS_WORK);
         exit(7);
     }
 
-    if(!valida_numero(argv[6])){
-        fprintf(stderr, "El nº de hilos work NO es un numero");
+    fpsal = fopen(argv[7], "w");
+
+    if(fpsal == NULL)
+    {
+        fprintf(stderr, "No se pudo abrir el fichero de log\n");
         exit(8);
     }
-
-    else{
-        num_hilos_work = atoi(argv[6]);
-    }
-
-    if(num_hilos_work < 1){
-        fprintf(stderr, "El nº de hilos work debe ser mayor que cero");
-        exit(9);
-    }
-    
-    
-    
 }
 
 // Función de utilidad para saber si la consulta DNS es del tipo
@@ -278,16 +268,10 @@ void *Worker(int *id)
         // Obtener de la cola la peticion a procesar, e imprimir
         // un mensaje de depuración mostrando el id del hilo y el mensaje
         // extraido de la cola
-        // A RELLENAR 
-        while(pet->msg == NULL){
-
-        }       
-
-        printf("Estoy pasando");
-        //snprintf(pantalla, sizeof(pantalla), "El mensaje es: %s con id de hilo %d\n", pet->msg, id_worker);
-        sprintf(pantalla, "%s %d\n", pet->msg, id_worker);
-
-        
+        // A RELLENAR
+        pet = obtener_dato_cola(&cola_peticiones);
+        sprintf(pantalla, "Worker %d: Mensaje recibido: %s\n", id_worker, pet->msg);
+        log_debug(pantalla);
 
         fp = fopen(nomfrecords, "r");
         if (fp == NULL)
@@ -300,10 +284,7 @@ void *Worker(int *id)
             // Separar el mensaje en sus constituyentes, con ayuda de la función
             // procesa_mensaje_recibido()
             // A RELLENAR
-            fprintf("El mensaje es: %s",pet->msg);
-            procesa_mensaje_recibido(pet->msg,&dombuscado,&recordbuscado,clavebusqueda);
-            printf("%s:",pet->msg);
-            
+            procesa_mensaje_recibido(pet->msg, &dombuscado, &recordbuscado, clavebusqueda);
 
             primera = CIERTO;
             bzero(msg, TAMMSG);
@@ -343,19 +324,15 @@ void *Worker(int *id)
                     {
                         // Hay que añadirle al msg previo el nuevo campo
                         char aux[TAMMSG];
-                        snprintf(aux, sizeof(aux), "%s:%s", msg, valorrecord);
-                        //sprintf(aux, "%s:%s", msg, valorrecord);
-                        //strcpy(msg, aux);
+                        sprintf(aux, "%s:%s", msg, valorrecord);
+                        strcpy(msg, aux);
                     }
 
                     // Si no se trata de un registro que pueda tener varios resultados
                     // salimos del bucle pues ya hemos encontrado un resultado
                     // A RELLENAR
-                    if(!es_multiresultado(valorrecord)){
+                    if (!es_multiresultado(recordbuscado))
                         break;
-                    }
-
-
                 }
             }
             fclose(fp);
@@ -375,24 +352,34 @@ void *Worker(int *id)
             // Escribimos la línea en el fichero de log (con exclusión mutua entre workers)
             // A RELLENAR
             pthread_mutex_lock(&mfsal);
-            fprintf(fpsal, "%s %s:%d %s:%s %s %s %s\n", fechahora, ip_cliente, puerto_cliente, dombuscado, recordbuscado, clavebusqueda, msg, strerror(errno));
+            fprintf(fpsal, "[%s] Cliente %s:%d - Consulta: %s\n", fechahora, ip_cliente, puerto_cliente, msg);
             pthread_mutex_unlock(&mfsal);
 
             // Enviar respuesta al cliente
             if (es_stream)
             {
                 // A RELLENAR
-                if (send(pet->s, msg, strlen(msg), 0) == -1)
-                {
-                perror("Error al enviar mensaje al cliente");
-                }
+                send(pet->s, msg, strlen(msg), 0);
+                close(pet->s);
 
             }
             else
             {
+                /*
                 // A RELLENAR
-                sendto(pet->s, msg, strlen(msg), 0, (struct sockaddr *)&(pet->d_cliente), sizeof(pet->d_cliente));
+                if (pet->s < 0) {
+                    perror("Socket inválido");
+                    exit(EXIT_FAILURE);
+                }
 
+                sendto(pet->s,msg,strlen(msg),0,(struct sockaddr *)&(pet->d_cliente),sizeof(pet->d_cliente));
+                */
+                   // Envío para socket UDP
+                int sock_dat = pet->s; // Almacenar el descriptor del socket en una variable local
+                struct sockaddr_in d_cliente = pet->d_cliente; // Almacenar la dirección del cliente en una variable local
+
+                // Enviamos los datos al cliente usando las variables locales
+                sendto(sock_dat, msg, strlen(msg), 0, (struct sockaddr *)&d_cliente, sizeof(d_cliente));
             }
             
             // Liberar memoria
@@ -410,7 +397,7 @@ void *Worker(int *id)
         free(pet);
     }
 }
-/*
+
 void *AtencionPeticiones(param_hilo_aten *q)
 {
     int sock_dat, recibidos;
@@ -440,9 +427,15 @@ void *AtencionPeticiones(param_hilo_aten *q)
             // No se cierra el socket de datos, pues lo necesitará el worker
             // y lo cerrará él
             // A RELLENAR
-            sock_dat = accept(s, (struct sockaddr *)&d_cliente, &l_dir);
+            if ((sock_dat = accept(s, (struct sockaddr *)&d_cliente, (socklen_t*)&l_dir)) < 0) {
+                perror("Error al aceptar la conexión");
+                exit(EXIT_FAILURE);
+            }
+
             recibidos = recv(sock_dat, buffer, sizeof(buffer), 0);
-            close(sock_dat); // Cerrar el socket de datos
+            buffer[recibidos] = '\0'; // Agregar un carácter nulo al final del buffer
+            printf("Mensaje recibido: %s\n", buffer); // Imprimir el contenido del buffer
+            printf("TCP IP del cliente: %s\n", inet_ntoa(d_cliente.sin_addr));
         }
         else // UDP
         {
@@ -467,98 +460,14 @@ void *AtencionPeticiones(param_hilo_aten *q)
 
         // Copiar el socket que debe usar el worker y meter el dato en la cola
         // A RELLENAR
-
-        // ????????
-        p->s = sock_dat; 
+        if(es_stream){
+            p->s = sock_dat;
+        }
+        else{
+            p->s = s;
+        }
+         
         insertar_dato_cola(&cola_peticiones, p);
-
-    }
-}
-*/
-void *AtencionPeticiones(param_hilo_aten *q)
-{
-    int sock_dat, recibidos;
-    struct sockaddr_in d_cliente;
-    socklen_t l_dir = sizeof(d_cliente);
-    char pantalla[TAMPANTALLA];
-    char buffer[TAMMSG];
-    dato_cola *p;
-    int s; // Variable local para almacenar el socket pasivo
-
-    // Información de depuración
-    sprintf(pantalla, "Comienza el Hilo de Atencion de Peticiones %d\n", q->num_hilo);
-    log_debug(pantalla);
-
-    // Extraemos el socket pasivo del parámetro y liberamos la memoria que
-    // había sido reservada para el parámetro desde main
-    s = q->s;
-    free(q);
-
-    while (1) // Bucle infinito de atencion de mensajes
-    {
-        // Aceptar cliente y leer en buffer el mensaje que éste envíe
-        // No se cierra el socket de datos, pues lo necesitará el worker
-        // y lo cerrará él
-        // A RELLENAR
-        if (es_stream)  // TCP
-        {
-            //COMPROBAR QUE EL MENSAJE NO ESTA VACIO
-                        // Aceptar cliente y leer en buffer el mensaje que éste envíe
-            // No se cierra el socket de datos, pues lo necesitará el worker
-            // y lo cerrará él
-            // A RELLENAR
-            printf("SOY TCP:\n");
-            //sock_dat = accept(s, (struct sockaddr *)&d_cliente, &l_dir);
-            //recibidos = recv(sock_dat, buffer, sizeof(buffer), 0);
-            //close(sock_dat); // Cerrar el socket de datos
-            if (listen(s, 10) < 0) {
-                perror("Error al escuchar conexiones");
-                exit(EXIT_FAILURE);    
-            }
-    
-            // Aceptar conexiones entrantes
-            if ((sock_dat = accept(s, (struct sockaddr *)&d_cliente, (socklen_t*)&l_dir)) < 0) {
-                perror("Error al aceptar la conexión");
-                exit(EXIT_FAILURE);
-            }
-
-            recibidos = recv(sock_dat, buffer, sizeof(buffer), 0);
-            buffer[recibidos] = '\0'; // Agregar un carácter nulo al final del buffer
-            printf("Mensaje recibido: %s\n", buffer); // Imprimir el contenido del buffer
-
-        }
-
-        else // UDP
-        {
-            while ((recibidos = recvfrom(s, buffer, sizeof(buffer), 0, (struct sockaddr *)&d_cliente, &l_dir)) <= 0) {
-                // Si no se recibió ningún mensaje, esperar un breve momento antes de volver a intentar recibir
-                usleep(10000); // Esperar 10 milisegundos (10,000 microsegundos)
-            }
-            buffer[recibidos] = 0;          // Añadir el terminador de cadena
-            buffer[strlen(buffer) - 1] = 0; // Quitar el retorno de carro
-        }
-
-        // Reservar memoria para el dato a meter en la cola
-        p = (dato_cola *)malloc(sizeof(dato_cola));
-        if (p == NULL)
-        {
-            fprintf(stderr, "No se pudo reservar memoria para una nueva peticion\n");
-            exit(15);
-        }
-
-        // Rellenar el dato apuntado por p e insertarlo en la cola
-
-        // Copiar la dirección del cliente y el mensaje
-        memcpy(&(p->d_cliente), &d_cliente, sizeof(struct sockaddr_in));
-        strncpy(p->msg, buffer, TAMMSG);
-
-        // Copiar el socket que debe usar el worker y meter el dato en la cola
-        // A RELLENAR
-
-        // ????????
-        p->s = sock_dat; 
-        insertar_dato_cola(&cola_peticiones, p);
-
     }
 }
 
@@ -589,25 +498,41 @@ int main(int argc, char *argv[])
     // Inicializar el socket (teniendo en cuenta si es orientado a conexión o no)
     // y asignarle el puerto de escucha
     // A RELLENAR
-
-    //???????????????
-    printf("Mi ip es %s: ",inet_ntoa(d_local.sin_addr));
-    printf("Mi puerto es %d: ", ntohs(d_local.sin_port));
-
-
-    if (es_stream) {
+    if(es_stream)
+    {
         sock = socket(AF_INET, SOCK_STREAM, 0);
-    } else {
-        sock = socket(AF_INET, SOCK_DGRAM, 0);
+        if(sock  < 0)
+        {
+            perror("Error al crear el socket");
+            exit(9);
+        }
+
+        if(bind(sock, (struct sockaddr *)&d_local, sizeof(struct sockaddr_in)) < 0)
+        {
+            perror("Error al hacer el bind");
+            exit(10);
+        }
+
+        listen(sock, SOMAXCONN);
+
     }
-    if (sock < 0) {
-        perror("Error al crear el socket");
-        exit(EXIT_FAILURE);
-    }
-    if (bind(sock, (struct sockaddr *)&d_local, sizeof(d_local)) < 0) {
-        perror("Error en el bind");
-        exit(EXIT_FAILURE);
-    }
+    else
+    {
+        sock = socket(AF_INET, SOCK_DGRAM, 0); 
+        if(sock  < 0)
+        {
+            perror("Error al crear el socket");
+            exit(9);
+        }
+        if(bind(sock, (struct sockaddr *)&d_local, sizeof(struct sockaddr_in)) < 0)
+        {
+            perror("Error al hacer el bind");
+            exit(10);
+        }
+
+        
+    } 
+    
 
     // creamos el espacio para los objetos de datos de hilo
     hilos_aten = (pthread_t *)malloc(sizeof(pthread_t) * num_hilos_aten);
@@ -635,9 +560,20 @@ int main(int argc, char *argv[])
         q = (param_hilo_aten *)malloc(sizeof(param_hilo_aten));
         
         // A RELLENAR
+        if(q == NULL)
+        {
+            fprintf(stderr, "No se pudo reservar memoria para los objetos de datos de hilo de atencion\n");
+            exit(11);
+        }
+
         q->num_hilo = i;
         q->s = sock;
-        pthread_create(&hilos_aten[i], NULL, (void *)AtencionPeticiones, (void *)q);
+
+        if(pthread_create(&hilos_aten[i], NULL, (void *)AtencionPeticiones, (void *)q) != 0)
+        {
+            fprintf(stderr, "No se pudo crear el hilo de atención %d\n", i);
+            exit(12);
+        }
     }
 
     // creamos un hilo por cada worker, pasándole el parámetro apropiado

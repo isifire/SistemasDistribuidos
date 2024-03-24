@@ -68,11 +68,9 @@ void procesa_argumentos(int argc, char *argv[])
     // Puedes usar las funciones en util.h
 
     // A RELLENAR
-    ip_srvdns = argv[1];
-    
+    ip_srvdns = argv[1];    
     nhilos = atoi(argv[4]);
     fich_consultas = argv[5];
-
 
     char *ip_cpy = malloc(strlen(ip_srvdns) + 1);
     strcpy(ip_cpy,ip_srvdns);
@@ -80,9 +78,6 @@ void procesa_argumentos(int argc, char *argv[])
     if (!valida_ip(ip_cpy)){
         fprintf(stderr, "La dirección IP del servidor NO es válida.\n");
         exit(1);
-    }
-    else{
-        printf("ip:%s\n",ip_srvdns);
     }
 
     if(!valida_numero(argv[2])){
@@ -92,7 +87,6 @@ void procesa_argumentos(int argc, char *argv[])
 
     else{
         puerto_srvdns = atoi(argv[2]);
-        printf("puerto:%d\n",puerto_srvdns);
     }
 
 
@@ -113,7 +107,19 @@ void procesa_argumentos(int argc, char *argv[])
         exit(5);
     }
 
-
+    if(strcmp(argv[3], "t") == 0)
+    {
+        es_stream = CIERTO;
+    }
+    else if(strcmp(argv[3], "u") == 0)
+    {
+        es_stream = FALSO;
+    }
+    else
+    {
+        fprintf(stderr, "El segundo argumento debe ser 't' o 'u'\n");
+        exit(2);
+    }
 }
 
 void salir_bien(int s)
@@ -155,48 +161,33 @@ void *hilo_lector(datos_hilo *p)
                 // y leer la respuesta del servidor
                 // A RELLENAR
                 sock_dat = socket(AF_INET, SOCK_STREAM, 0);
-
+				
                 if (sock_dat < 0)
                 {
                     perror("Error al crear el socket");
                     pthread_exit(NULL);
                 }
-
-                struct sockaddr_in server_addr;
-                server_addr.sin_family = AF_INET;
-                server_addr.sin_port = htons(puerto_srvdns);
-                server_addr.sin_addr.s_addr = inet_addr(ip_srvdns);
-                memset(server_addr.sin_zero, '\0', sizeof(server_addr.sin_zero));
-
-                if (connect(sock_dat, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+       
+                if (connect(sock_dat, p->dserv, sizeof(struct sockaddr)) < 0)
                 {
-                    int connect_error = errno; // Guardar el valor de errno
-                    perror("Error al conectar");
-                    close(sock_dat); // Cerrar el socket correctamente
-                    fprintf(stderr, "Valor de errno: %d\n", connect_error); // Imprimir el valor de errno
+                    perror("Error al conectar al servidor");
                     pthread_exit(NULL);
                 }
 
-                printf("La linea es: %s",buffer);
-                enviados = send(sock_dat, buffer, strlen(buffer), 0);
-
+                enviados = write(sock_dat, buffer, strlen(buffer));
                 if (enviados < 0)
                 {
-                    perror("Error al enviar datos");
-                    close(sock_dat);
+                    perror("Error al escribir en el socket");
                     pthread_exit(NULL);
                 }
 
-                recibidos = recv(sock_dat, respuesta, TAMLINEA, 0);
+                bzero(respuesta, TAMLINEA);
+                recibidos = read(sock_dat, respuesta, TAMLINEA);
                 if (recibidos < 0)
                 {
-                    perror("Error al recibir respuesta");
-                    close(sock_dat);
+                    perror("Error al leer desde el socket");
                     pthread_exit(NULL);
                 }
-
-                fprintf(fpout, "%s:%s", buffer, respuesta);
-
             }
             else
             {
@@ -210,38 +201,35 @@ void *hilo_lector(datos_hilo *p)
                     pthread_exit(NULL);
                 }
 
-                struct sockaddr_in server_addr;
-                server_addr.sin_family = AF_INET;
-                server_addr.sin_port = htons(puerto_srvdns);
-                server_addr.sin_addr.s_addr = inet_addr(ip_srvdns);
-                memset(server_addr.sin_zero, '\0', sizeof(server_addr.sin_zero));
-
-
-                enviados = sendto(sock_dat, buffer, strlen(buffer), 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
-                if (enviados < 0)
+                if (sendto(sock_dat, buffer, strlen(buffer), 0, p->dserv, sizeof(struct sockaddr)) < 0) 
                 {
-                    perror("Error al enviar datos");
-                    close(sock_dat);
+                    perror("Error al enviar datos por UDP");
                     pthread_exit(NULL);
                 }
 
-                socklen_t addr_len = sizeof(server_addr);
-                recibidos = recvfrom(sock_dat, respuesta, TAMLINEA, 0, (struct sockaddr *)&server_addr, &addr_len);
-                if (recibidos < 0)
+                bzero(respuesta, TAMLINEA);
+                socklen_t addr_len = sizeof(struct sockaddr);
+                if (recvfrom(sock_dat, respuesta, TAMLINEA, 0, p->dserv, &addr_len) < 0)
                 {
-                    perror("Error al recibir respuesta");
-                    close(sock_dat);
+                    perror("Error al recibir datos por UDP");
                     pthread_exit(NULL);
                 }
-        
             }
+            close(sock_dat);
+            // Volcar la petición y la respuesta, separadas por ":" en
+            // el fichero de resultados
+            // A RELLENAR
+            size_t len_buffer = strlen(buffer);
+            if (len_buffer > 0 && buffer[len_buffer - 1] == '\n')
+                buffer[len_buffer - 1] = '\0';
+
+            size_t len_respuesta = strlen(respuesta);
+            if (len_respuesta > 0 && respuesta[len_respuesta - 1] == '\n')
+                respuesta[len_respuesta - 1] = '\0';
+
+            // Escribir en el archivo de salida con un solo salto de línea al final
+            fprintf(fpout, "%s:%s\n", buffer, respuesta);
         }
-        close(sock_dat);
-        // Volcar la petición y la respuesta, separadas por ":" en
-        // el fichero de resultados
-        // A RELLENAR
-        fprintf(fpout, "%s:%s\n", buffer, respuesta);
-    
     } while (s);
     // Terminado el hilo, liberamos la memoria del puntero y cerramos ficheros
     fclose(fpin);
@@ -282,7 +270,7 @@ int main(int argc, char *argv[])
 
     // Inicializar la estructura de dirección del servidor que se pasará a los hilos
     // A RELLENAR
-    memset(&d_serv, 0, sizeof(d_serv));
+    memset(&d_serv, 0, sizeof(struct sockaddr_in));
     d_serv.sin_family = AF_INET;
     d_serv.sin_addr.s_addr = inet_addr(ip_srvdns);
     d_serv.sin_port = htons(puerto_srvdns);
@@ -297,7 +285,7 @@ int main(int argc, char *argv[])
         q->dserv = (struct sockaddr *)&d_serv;
         // Crear el hilo
         // A RELLENAR
-        if (pthread_create(&th[i], NULL, (void *)hilo_lector, (void *)q) != 0)
+        if ( pthread_create(&th[i], NULL, (void *)hilo_lector, (void *)q) != 0)
         {
             fprintf(stderr, "No se pudo crear el hilo lector %d\n", i);
             exit(9);
