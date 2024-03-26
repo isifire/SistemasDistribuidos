@@ -160,12 +160,3 @@ dato_cola *obtener_dato_cola(Cola *cola)
 
     return p;
 }
-
-
-void imprimir_dato_cola(dato_cola *dato) {
-    printf("Contenido de dato_cola:\n");
-    printf(" - Mensaje: %s", dato->msg);
-    printf(" - Socket: %d\n", dato->s);
-    printf(" - Dirección IP del cliente: %s\n", inet_ntoa(dato->d_cliente.sin_addr));
-    printf(" - Puerto del cliente: %d\n", ntohs(dato->d_cliente.sin_port));
-}

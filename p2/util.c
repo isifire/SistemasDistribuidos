@@ -145,30 +145,49 @@ char *obtener_dato_en_posicion(int n, Lista *p)
     char *cad = NULL;
 
     // A RELLENAR
-    |
-    |
-    |
-    |
-    |
-    |
-    
+    int contador = 0;
+    Lista* q = p;
+
+    while (q != NULL && contador < n)
+    {
+        contador++;
+        q = q->siguiente;
+    }
+
+    if (q != NULL)
+    {
+        cad = strdup(q->dato);
+    }
+
+
+
     return (cad);
 }
 
 int posicion_en_lista(char *cad, Lista *p)
 {
-    // Busca la cadena dada en la lista y retorna la posición en la que se encuentra
-    // o la constante NOENCONTRADO si no está.
+   
+    int pos = 0;
+    int found = FALSE;
+    Lista *q = p;
 
-    int pos = NOENCONTRADO;
+    while (q != NULL && !found)
+    {
+        if (strcmp(q->dato, cad) == 0)
+        {
+            found = TRUE;
+        }
+        else
+        {
+            q = q->siguiente;
+            pos++;
+        }
+    }
 
-    // A RELLENAR
-    |
-    |
-    |
-    |
-    |
-    |
-    
-    return (pos);
+    if (!found)
+    {
+        pos = NOENCONTRADO;
+    }
+
+    return pos;
 }

@@ -104,13 +104,13 @@ void *Cliente(datos_hilo *p)
     id_cliente = p->id_cliente; // Capturar el id del cliente en una variable local
 
     // Intentar abrir el fichero de salida (cuyo nombre depende del id del cliente)
-    if ---------------------- // A RELLENAR
+    if ((fpsal = fopen(hilos_file_names[id_cliente], "w")) == NULL) // A RELLENAR
     {
         fprintf(stderr, "Error: cliente %d no pudo abrir el fichero de salida %s\n", id_cliente, hilos_file_names[id_cliente]);
         exit(10);
     }
     // y el fichero de consultas
-    if ---------------------- // A RELLENAR
+    if ((fpin = fopen(p->nom_fichero_consultas, "r")) == NULL) // A RELLENAR
     {
         fprintf(stderr, "Error: cliente %d no pudo abrir el fichero de entrada %s\n", id_cliente, p->nom_fichero_consultas);
         exit(11);
@@ -121,12 +121,12 @@ void *Cliente(datos_hilo *p)
     {
         // Inicializar la estructura CLIENT (controlando posibles errores)
         // A RELLENAR
-        |
-        |
-        |
-        |
-        |
-        |
+        cl =  clnt_create(ip_srv, SRVDNS, PRIMERA, "tcp");
+
+        if(cl == NULL){
+            clnt_pcreateerror(ip_srv);
+            exit(3);
+        }
 
         // Leer una línea del fichero de consultas
         bzero(buffer, TAMLINEA);
@@ -136,15 +136,15 @@ void *Cliente(datos_hilo *p)
             // Extraer los campos de la línea leída para dejarlos en los
             // campos de la estructura paramconsulta
             // A RELLENAR
-            |
-            |
+            obtener_campos_consulta(id_cliente, buffer, &q.nomdominio, &q.tiporecord, &q.clave);
+
 
             // Invocación remota del servicio consulta_record, protegiendo la llamada con un mutex
             // para evitar que dos hilos hagan la RPC a la vez
             // A RELLENAR
-            |
-            |
-            |
+            pthread_mutex_lock(&m);
+            res = consulta_record_1(&q, cl);
+            pthread_mutex_unlock(&m);
 
             // Procesar la respuesta recibida, según el caso de la unión
             switch (res->caso)
@@ -153,14 +153,12 @@ void *Cliente(datos_hilo *p)
                 // Volcar a fpsal el dominio consultado, el tipo de record, la clave (solo
                 // si la consulta no fue tipo MX o NS) y el resultado recibido
                 // A RELLENAR
-                |
-                |
-                |
-                |
-                |
-                |
-                |
-                break;
+				if (!es_MX_o_NS(q.tiporecord)) {
+					fprintf(fpsal, "%s,%s,%s:%s\n", q.nomdominio, q.tiporecord, q.clave, res->Resultado_u.msg);
+				} else {
+					fprintf(fpsal, "%s,%s:%s\n", q.nomdominio, q.tiporecord, res->Resultado_u.msg);
+				}
+				break;
             case 2:
                 sprintf(msg, "Error: Cliente %d Resultado invocacion remota: %s\n", id_cliente, res->Resultado_u.err);
                 log_debug(msg);
@@ -206,14 +204,24 @@ int main(int argc, char *argv[])
 
     // Valida cada argumento y lo asigna a la variable apropiada
     // A RELLENAR
-    |
-    |
-    |
-    |
-    |
-    |
-    |
-    |
+    if(!valida_numero(argv[1]) ){
+        perror("El nº de clientes NO es un número");
+        exit(2);
+    }
+
+    if(atoi(argv[1]) < 1){
+        perror("El nº de clientes debe ser mayor que 0");
+        exit(2);
+    }
+
+    num_clientes = atoi(argv[1]);
+
+    char *ip_cpy = argv[2];
+    if(!valida_ip(ip_cpy)){
+        perror("La dirección IP no es valida");
+    }
+
+    ip_srv = argv[2];
 
 
     // Intenta abrir el fichero por si hubiera problemas abortar (aunque main
@@ -249,18 +257,21 @@ int main(int argc, char *argv[])
     for (i = 0; i < num_clientes; i++)
     {
         // A RELLENAR
-        |
-        |
-        |
-        |
-        |
-        |
-        |
-        |
-        |
-        |
-        |
-        |
+        q = (datos_hilo *)malloc(sizeof(datos_hilo));
+        if (q == NULL)
+        {
+            fprintf(stderr, "Error: no hay memoria suficiente para los datos del hilo\n");
+            exit(8);
+        }
+
+        q->id_cliente = i;
+        q->nom_fichero_consultas = argv[3];
+
+        if (pthread_create(&th[i], NULL, (void *(*)(void *))Cliente, (void *)q) != 0)
+        {
+            fprintf(stderr, "Error: no se pudo crear el hilo %d\n", i);
+            exit(9);
+        }
     }
 
     // Esperar a que terminen los hilos Cliente

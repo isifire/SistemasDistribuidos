@@ -174,7 +174,7 @@ Resultado *consulta_record_1_svc(paramconsulta *q, struct svc_req *peticion)
             valorrecord = strdup(token);
         }
         // Si coinciden los tres campos con los de la consulta...
-        if ------------------------------------------- // A RELLENAR
+        if ((strcmp(q->nomdominio, domleido) == 0) && (strcmp(q->tiporecord, recordleido) == 0) && (strcmp(q->clave, claveleida) == 0)) // A RELLENAR
         {
             // hemos encontrado un valor para responder a la consulta
             // vamos añadiéndolo a la respuesta
@@ -194,10 +194,9 @@ Resultado *consulta_record_1_svc(paramconsulta *q, struct svc_req *peticion)
 
             // Si el registro buscado no es NS o MX dejamos de buscar
             // A RELLENAR
-            |
-            |
-            |
-            |
+            if(!es_MX_o_NS(q->tiporecord)){
+                break;
+            }
         }
     }
     fclose(fp);
@@ -207,10 +206,15 @@ Resultado *consulta_record_1_svc(paramconsulta *q, struct svc_req *peticion)
     // buscarlos en las listas de nombres de dominios y de tipos de registros
     // con ayuda de la función posicion_en_lista
     // A RELLENAR
-    |
-    |
-    |
-    |
+    fila = posicion_en_lista(q->nomdominio, lnomdominios);
+    columna = posicion_en_lista(q->tiporecord, lnomtiposrec);
+	
+    if (fila != -1 && columna != -1) {
+        contabilidad_consultas[fila][columna]++;
+    } else {
+        sprintf(mensaje, "Error: No se encontró el dominio o el tipo de registro en las listas");
+        log_debug(mensaje);
+    }
 
 
     // Añadir la consulta al fichero de log
@@ -254,12 +258,13 @@ Resultado *obtener_total_dominio_1_svc(int *ndxdom, struct svc_req *peticion)
     else
     {
         // A RELLENAR
-        |
-        |
-        |
-        |
-        |
-        |
+        int total_consultas = 0;
+        for (i = 0; i < numtiposrec; ++i)
+        {
+            total_consultas += contabilidad_consultas[*ndxdom][i];
+        }
+        res.Resultado_u.val = total_consultas;
+        res.caso = 1;
     }
     return (&res);
 }
@@ -281,11 +286,13 @@ Resultado *obtener_total_registro_1_svc(int *ndxrec, struct svc_req *peticion)
     else
     {
         // A RELLENAR
-        |
-        |
-        |
-        |
-        |
+        int total_consultas = 0;
+        for (i = 0; i < numdominios; i++)
+        {
+            total_consultas += contabilidad_consultas[i][*ndxrec];
+        }
+        res.Resultado_u.val = total_consultas;
+        res.caso = 1;
     }
     return (&res);
 }
@@ -312,9 +319,9 @@ Resultado *obtener_total_dominioregistro_1_svc(domrecord *q, struct svc_req *pet
     else
     {
         // A RELLENAR
-        |
-        |
-        |
+        int contador = contabilidad_consultas[q->ndxdom][q->ndxrecord];
+        res.Resultado_u.val = contador;
+        res.caso = 1;
     }
     return (&res);
 }
@@ -372,15 +379,27 @@ Resultado *obtener_nombre_record_1_svc(int *n, struct svc_req *peticion)
 {
     // Retorna el nombre de tipo de registro asociado a un índice dado
     // A RELLENAR
-    |
-    |
-    |
-    |
-    |
-    |
-    |
-    |
-    |
+    static Resultado res;
+    
+    if ((*n < 0) || (*n > (numtiposrec - 1)))
+    {
+        res.caso = 2;
+        res.Resultado_u.err = "ERROR en el número de tipo de registro";
+    }
+    else
+    {
+        char *nombre_tipo_registro = obtener_dato_en_posicion(*n, lnomtiposrec);
+        if (nombre_tipo_registro == NULL)
+        {
+            res.caso = 2;
+            res.Resultado_u.err = "ERROR al obtener el nombre del tipo de registro";
+        }
+        else
+        {
+            res.Resultado_u.msg = nombre_tipo_registro;
+            res.caso = 0;
+        }
+    }
 
     return (&res);
 }
